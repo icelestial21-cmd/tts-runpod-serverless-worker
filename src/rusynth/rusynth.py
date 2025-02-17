@@ -105,7 +105,7 @@ class RUSynth:
             channels = 1,
             target_dBFS = volume_to_dbfs(volume)
         )
-        if low_pass_filter:
+        if low_pass_filter_cutoff:
             audio = low_pass_filter(audio, sr, 1, low_pass_filter_cutoff)
         return audio, sr
 

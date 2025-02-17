@@ -162,10 +162,11 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
 
     # Concatenate all audio segments with a silence gap between them
     final_audio: np.ndarray = concatenate_audios(audio_segments, sample_rate, silence_duration=0.2)
+    final_audio = final_audio.astype(np.int16)
 
     # Optionally, apply audio enhancement using AudioEnhancer with default parameters.
     if enhance_audio:
-        audio_tensor = torch.from_numpy(final_audio)
+        audio_tensor = torch.from_numpy(final_audio).float()
         # Default parameters: nfe=64, solver="midpoint", lambd=1.0, tau=0.5
         audio_tensor, sample_rate = AUDIO_ENHANCER(audio_tensor, sample_rate=sample_rate)
         final_audio = audio_tensor.detach().cpu().numpy()
