@@ -2,8 +2,12 @@
 # Reccomended to lock the version number to avoid unexpected changes.
 
 runpod==1.4.2
-
-
-TTS==0.22.0
-scipy==1.11.4
-deepspeed==0.14.0
+numpy==2.0.2
+onnxruntime-gpu==1.19.2
+ruaccent==1.5.8.3
+nltk==3.9.1
+tqdm==4.66.5
+huggingface-hub==0.26.1
+pydub==0.25.1
+scipy==1.14.1
+rusynth>=0.1.0

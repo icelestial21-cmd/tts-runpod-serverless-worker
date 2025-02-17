@@ -1,85 +1,180 @@
+"""
+rp_handler.py
+
+This is the main handler for the runpod TTS worker with multi-speaker support.
+The API now expects the "text" field as a dictionary where each key is a speaker ID
+and its value is the text to synthesize. For each speaker, TTS synthesis is performed using
+the RUSynth library (with long_text mode always enabled), and the resulting audio segments are
+concatenated with short silence intervals. Optionally, audio enhancement is applied using the
+AudioEnhancer from resemble_enhance. All models are loaded from local directories specified via
+environment variables. GPU is used if available.
+"""
+
 import io
 import os
-import argparse
-# runpod utils
+import base64
+import pathlib
+from typing import Any, Dict, List
+
 import runpod
+import torch
+import numpy as np
 from runpod.serverless.utils.rp_validator import validate
 from runpod.serverless.utils.rp_upload import upload_in_memory_object
-from runpod.serverless.utils import rp_download, rp_cleanup
-# predictor
-import predict
-from rp_schema import INPUT_SCHEMA
-# utils
+from runpod.serverless.utils import rp_cleanup
 from scipy.io.wavfile import write
 
+# Import the TTS synthesizer from the rusynth library
+from rusynth import RUSynth
+# Import the AudioEnhancer from resemble_enhance
+from resemble_enhance.audio_enhancer import AudioEnhancer
+# Import the input schema for validation
+from rp_schema import INPUT_SCHEMA
 
-# Model params
-model_dir = os.getenv("WORKER_MODEL_DIR", "/model")
+# Set model directories from environment variables.
+TTS_MODEL_DIR: str = os.getenv("WORKER_TTS_MODEL_DIR", "/model/tts")
+AUDIO_ENHANCER_DIR: str = os.getenv("WORKER_AUDIO_ENHANCER_DIR", "/model/audio_enhancer")
 
+# Load the TTS model using RUSynth from the local directory.
+TTS_MODEL: RUSynth = RUSynth(TTS_MODEL_DIR)
 
-def upload_audio(wav, sample_rate, key):
-    """ Uploads audio to S3 bucket if it is available, otherwise returns base64 encoded audio. """
-    # Convert wav to bytes
+# Determine the device: use CUDA if enabled and available.
+USE_CUDA: bool = os.environ.get('WORKER_USE_CUDA', 'True').lower() == 'true'
+DEVICE: str = "cuda" if USE_CUDA and torch.cuda.is_available() else "cpu"
+
+# Load the audio enhancer from the local directory.
+AUDIO_ENHANCER: AudioEnhancer = AudioEnhancer.from_pretrained(
+    pathlib.Path(AUDIO_ENHANCER_DIR) / "enhancer_stage2",
+    device=DEVICE
+)
+
+def upload_audio(wav: np.ndarray, sample_rate: int, key: str) -> str:
+    """
+    Converts the audio numpy array to bytes and uploads it to S3 (if configured),
+    otherwise returns a base64-encoded string.
+
+    Args:
+        wav: Audio data as a numpy array.
+        sample_rate: Sampling rate of the audio.
+        key: The key or filename for the uploaded object.
+
+    Returns:
+        A string representing the uploaded file URL or the base64 encoded audio.
+    """
     wav_io = io.BytesIO()
     write(wav_io, sample_rate, wav)
-
-    # Upload to S3
+    wav_bytes: bytes = wav_io.getvalue()
     if os.environ.get('BUCKET_ENDPOINT_URL', False):
         return upload_in_memory_object(
             key,
-            wav_io.read(),
-            bucket_creds = {
+            wav_bytes,
+            bucket_creds={
                 "endpointUrl": os.environ.get('BUCKET_ENDPOINT_URL', None),
                 "accessId": os.environ.get('BUCKET_ACCESS_KEY_ID', None),
                 "accessSecret": os.environ.get('BUCKET_SECRET_ACCESS_KEY', None)
             }
         )
-    # Base64 encode
-    return wav_io.decode('UTF-8')
+    return base64.b64encode(wav_bytes).decode('utf-8')
 
+def concatenate_audios(audios: List[np.ndarray], sample_rate: int, silence_duration: float = 0.2) -> np.ndarray:
+    """
+    Concatenates a list of audio segments with a silence gap between them.
 
-def run(job):
-    job_input = job['input']
+    Args:
+        audios: List of numpy arrays representing audio segments.
+        sample_rate: Sampling rate of the audio.
+        silence_duration: Duration of silence (in seconds) to insert between segments.
 
-    # Input validation
-    validated_input = validate(job_input, INPUT_SCHEMA)
+    Returns:
+        A single numpy array containing the concatenated audio.
+    """
+    silence = np.zeros(int(silence_duration * sample_rate), dtype=audios[0].dtype)
+    segments: List[np.ndarray] = []
+    for audio in audios:
+        segments.append(audio)
+        segments.append(silence)
+    if segments:
+        segments.pop()  # Remove the last silence
+    return np.concatenate(segments)
 
-    if 'errors' in validated_input:
-        return {"error": validated_input['errors']}
-    validated_input = validated_input['validated_input']
+def run(job: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Main handler function for the multi-speaker TTS worker.
 
-    # Download input objects
-    for k, v in validated_input["voice"].items():
-        validated_input["voice"][k] = rp_download.download_files_from_urls(
-            job['id'],
-            [v]
+    This function validates the input JSON, synthesizes speech for each speaker from the
+    provided dictionary using RUSynth (with long_text mode always enabled), concatenates the
+    resulting audio segments with silence, optionally applies audio enhancement using the
+    AudioEnhancer, and returns the resulting audio.
+
+    Args:
+        job: A dictionary containing the job input data.
+
+    Returns:
+        A dictionary containing the output audio (base64-encoded or URL).
+    """
+    job_input: Dict[str, Any] = job['input']
+
+    # Validate the input using the schema
+    validated: Dict[str, Any] = validate(job_input, INPUT_SCHEMA)
+    if 'errors' in validated:
+        return {"error": validated['errors']}
+    params: Dict[str, Any] = validated['validated_input']
+
+    # The "text" field is expected to be a dictionary mapping speaker IDs to text strings.
+    text_dict: Dict[str, str] = params["text"]
+
+    # Common TTS parameters (applied to all segments)
+    speed: float = params.get("speed", 1.0)
+    accentize: bool = params.get("accentize", True)
+    volume: float = params.get("volume", 0.3)
+    low_pass_filter_cutoff: Any = params.get("low_pass_filter_cutoff", None)
+    # long_text mode is always enabled
+    long_text: bool = True
+    enhance_audio: bool = params.get("enhance_audio", False)
+
+    audio_segments: List[np.ndarray] = []
+    sample_rate: int = None
+
+    # Iterate over the dictionary items. JSON keys are strings; convert them to int.
+    for speaker_key, text in text_dict.items():
+        try:
+            speaker_id = int(speaker_key)
+        except ValueError:
+            continue  # Skip if conversion fails
+
+        # Synthesize audio for the current speaker using RUSynth with long_text mode enabled.
+        segment_audio, sr = TTS_MODEL.synthesize_long(
+            text=text,
+            speaker_id=speaker_id,
+            speed=speed,
+            accentize=accentize,
+            volume=volume,
+            low_pass_filter_cutoff=low_pass_filter_cutoff,
+            verbose=False
         )
+        if sample_rate is None:
+            sample_rate = sr
+        elif sample_rate != sr:
+            sample_rate = sr  # Ensure consistency (or perform resampling if necessary)
+        audio_segments.append(segment_audio)
 
-    # Inference text-to-audio
-    wave, sr = MODEL.predict(
-        language=validated_input["language"],
-        speaker_wav=validated_input["voice"],
-        text=validated_input["text"],
-        gpt_cond_len=validated_input.get("gpt_cond_len", 7),
-        max_ref_len=validated_input.get("max_ref_len", 10),
-        speed=validated_input.get("speed", 1.0),
-        enhance_audio=validated_input.get("enhance_audio", True)
-    )
+    # Concatenate all audio segments with a silence gap between them
+    final_audio: np.ndarray = concatenate_audios(audio_segments, sample_rate, silence_duration=0.2)
 
-    # Upload output object
-    audio_return = upload_audio(wave, sr, f"{job['id']}.wav")
-    job_output = {
-        "audio": audio_return
-    }
+    # Optionally, apply audio enhancement using AudioEnhancer with default parameters.
+    if enhance_audio:
+        audio_tensor = torch.from_numpy(final_audio)
+        # Default parameters: nfe=64, solver="midpoint", lambd=1.0, tau=0.5
+        audio_tensor, sample_rate = AUDIO_ENHANCER(audio_tensor, sample_rate=sample_rate)
+        final_audio = audio_tensor.detach().cpu().numpy()
 
-    # Remove downloaded input objects
+    # Upload or encode the resulting audio
+    audio_return: str = upload_audio(final_audio, sample_rate, f"{job['id']}.wav")
+    job_output: Dict[str, Any] = {"audio": audio_return}
+
+    # Clean up temporary files if necessary
     rp_cleanup.clean(['input_objects'])
-
     return job_output
 
-
 if __name__ == "__main__":
-    MODEL = predict.Predictor(model_dir=model_dir)
-    MODEL.setup()
-
     runpod.serverless.start({"handler": run})
