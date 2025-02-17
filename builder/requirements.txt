@@ -10,4 +10,3 @@ tqdm==4.66.5
 huggingface-hub==0.26.1
 pydub==0.25.1
 scipy==1.14.1
-rusynth>=0.1.0
