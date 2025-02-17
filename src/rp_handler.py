@@ -2,8 +2,8 @@
 rp_handler.py
 
 This is the main handler for the runpod TTS worker with multi-speaker support.
-The API now expects the "text" field as a dictionary where each key is a speaker ID
-and its value is the text to synthesize. For each speaker, TTS synthesis is performed using
+The API now expects the "text" field as a list of pairs where each pair contains a speaker ID
+and its corresponding text to synthesize. For each speaker, TTS synthesis is performed using
 the RUSynth library (with long_text mode always enabled), and the resulting audio segments are
 concatenated with short silence intervals. Optionally, audio enhancement is applied using the
 AudioEnhancer from resemble_enhance. All models are loaded from local directories specified via
@@ -14,7 +14,7 @@ import io
 import os
 import base64
 import pathlib
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import runpod
 import torch
@@ -27,7 +27,7 @@ from scipy.io.wavfile import write
 # Import the TTS synthesizer from the rusynth library
 from rusynth import RUSynth
 # Import the AudioEnhancer from resemble_enhance
-from resemble_enhance.audio_enhancer import AudioEnhancer
+from audio_enhancer import AudioEnhancer
 # Import the input schema for validation
 from rp_schema import INPUT_SCHEMA
 
@@ -102,7 +102,7 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
     Main handler function for the multi-speaker TTS worker.
 
     This function validates the input JSON, synthesizes speech for each speaker from the
-    provided dictionary using RUSynth (with long_text mode always enabled), concatenates the
+    provided list using RUSynth (with long_text mode always enabled), concatenates the
     resulting audio segments with silence, optionally applies audio enhancement using the
     AudioEnhancer, and returns the resulting audio.
 
@@ -120,8 +120,8 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": validated['errors']}
     params: Dict[str, Any] = validated['validated_input']
 
-    # The "text" field is expected to be a dictionary mapping speaker IDs to text strings.
-    text_dict: Dict[str, str] = params["text"]
+    # The "text" field is expected to be a list of pairs [speaker_id, text].
+    text_list: List[Tuple[Any, str]] = params["text"]
 
     # Common TTS parameters (applied to all segments)
     speed: float = params.get("speed", 1.0)
@@ -135,12 +135,14 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
     audio_segments: List[np.ndarray] = []
     sample_rate: int = None
 
-    # Iterate over the dictionary items. JSON keys are strings; convert them to int.
-    for speaker_key, text in text_dict.items():
+    # Iterate over the list of pairs.
+    for pair in text_list:
         try:
-            speaker_id = int(speaker_key)
-        except ValueError:
-            continue  # Skip if conversion fails
+            # Each pair should contain speaker_id and text.
+            speaker_id, text = pair
+            speaker_id = int(speaker_id)
+        except (ValueError, TypeError):
+            continue  # Skip invalid entries
 
         # Synthesize audio for the current speaker using RUSynth with long_text mode enabled.
         segment_audio, sr = TTS_MODEL.synthesize_long(
