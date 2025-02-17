@@ -32,8 +32,8 @@ from resemble_enhance.audio_enhancer import AudioEnhancer
 from rp_schema import INPUT_SCHEMA
 
 # Set model directories from environment variables.
-TTS_MODEL_DIR: str = os.getenv("WORKER_TTS_MODEL_DIR", "/model/tts")
-AUDIO_ENHANCER_DIR: str = os.getenv("WORKER_AUDIO_ENHANCER_DIR", "/model/audio_enhancer")
+TTS_MODEL_DIR: str = os.getenv("WORKER_TTS_MODEL_DIR", "/app/model/tts")
+AUDIO_ENHANCER_DIR: str = os.getenv("WORKER_AUDIO_ENHANCER_DIR", "/app/model/audio_enhancer")
 
 # Load the TTS model using RUSynth from the local directory.
 TTS_MODEL: RUSynth = RUSynth(TTS_MODEL_DIR)
