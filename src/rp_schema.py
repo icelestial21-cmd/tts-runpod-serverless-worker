@@ -11,8 +11,7 @@ An additional parameter "output_format" may be provided with values "wav" (defau
 from typing import Any, Dict
 
 INPUT_SCHEMA: Dict[str, Any] = {
-    "text": {"type": list, "required": True},  # e.g. [[0, "Text for speaker 0"], [1, "Text for speaker 1"]]
-    "speed": {"type": float, "required": False},
+    "text": {"type": list, "required": True},  # e.g. [[0, 0.8, "Text for speaker 0"], [1, 0.7, "Text for speaker 1"]]
     "accentize": {"type": bool, "required": False},
     "volume": {"type": float, "required": False},
     "low_pass_filter_cutoff": {"type": int, "required": False},

@@ -186,7 +186,6 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
     text_list: List[Tuple[Any, str]] = params["text"]
 
     # Common TTS parameters (applied to all segments)
-    speed: float = params.get("speed", 1.0)
     accentize: bool = params.get("accentize", True)
     volume: float = params.get("volume", 0.3)
     low_pass_filter_cutoff: Any = params.get("low_pass_filter_cutoff", None)
@@ -199,11 +198,12 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
     sample_rate: int = None
 
     # Iterate over the list of pairs.
-    for pair in text_list:
+    for replica in text_list:
         try:
             # Each pair should contain speaker_id and text.
-            speaker_id, text = pair
+            speaker_id, speed, text = pair
             speaker_id = int(speaker_id)
+            speed = float(speed)
         except (ValueError, TypeError):
             continue  # Skip invalid entries
 
