@@ -201,7 +201,7 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
     for replica in text_list:
         try:
             # Each pair should contain speaker_id and text.
-            speaker_id, speed, text = pair
+            speaker_id, speed, text = replica
             speaker_id = int(speaker_id)
             speed = float(speed)
         except (ValueError, TypeError):
