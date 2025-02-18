@@ -20,6 +20,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 RUN apt-get update --fix-missing && \
     apt-get install -y wget bzip2 ca-certificates curl git sudo gcc build-essential openssh-client cmake g++ ninja-build && \
     apt-get install -y libaio-dev && \
+    apt-get install -y ffmpeg && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y python3-dev python3-pip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

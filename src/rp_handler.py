@@ -23,6 +23,7 @@ from runpod.serverless.utils.rp_validator import validate
 from runpod.serverless.utils.rp_upload import upload_in_memory_object
 from runpod.serverless.utils import rp_cleanup
 from scipy.io.wavfile import write
+from pydub import AudioSegment
 
 # Import the TTS synthesizer from the rusynth library
 from rusynth import RUSynth
@@ -75,6 +76,67 @@ def upload_audio(wav: np.ndarray, sample_rate: int, key: str) -> str:
             }
         )
     return base64.b64encode(wav_bytes).decode('utf-8')
+
+def upload_bytes(bytes_array: bytes, key: str) -> str:
+    """
+    Upload bytes to S3 (if configured), otherwise returns a base64-encoded string.
+
+    Args:
+        bytes_array: bytes to upload.
+        key: The key or filename for the uploaded object.
+
+    Returns:
+        A string representing the uploaded file URL or the base64 encoded audio.
+    """
+    if os.environ.get('BUCKET_ENDPOINT_URL', False):
+        return upload_in_memory_object(
+            key,
+            bytes_array,
+            bucket_creds={
+                "endpointUrl": os.environ.get('BUCKET_ENDPOINT_URL', None),
+                "accessId": os.environ.get('BUCKET_ACCESS_KEY_ID', None),
+                "accessSecret": os.environ.get('BUCKET_SECRET_ACCESS_KEY', None)
+            }
+        )
+    return base64.b64encode(wav_bytes).decode('utf-8')
+
+def wav_to_bytes(wav: np.ndarray, sample_rate: int) -> str:
+    """
+    Converts the audio numpy array to bytes.
+
+    Args:
+        wav: Audio data as a numpy array.
+        sample_rate: Sampling rate of the audio.
+
+    Returns:
+        A string representing the uploaded file URL or the base64 encoded audio.
+    """
+    wav_io = io.BytesIO()
+    write(wav_io, sample_rate, wav)
+    wav_bytes: bytes = wav_io.getvalue()
+    return wav_bytes
+
+def wav_to_mp3_bytes(wav: np.ndarray, sample_rate: int) -> bytes:
+    """
+    Converts a WAV numpy array (int16) to MP3 format using pydub.
+
+    Args:
+        wav: Audio data as a numpy array in int16 format.
+        sample_rate: Sampling rate of the audio.
+
+    Returns:
+        Audio data in MP3 format as bytes.
+    """
+    # Create an AudioSegment from raw audio data.
+    audio_segment = AudioSegment(
+        data=wav.tobytes(),
+        sample_width=2,   # int16 -> 2 bytes
+        frame_rate=sample_rate,
+        channels=1
+    )
+    mp3_io = io.BytesIO()
+    audio_segment.export(mp3_io, format="mp3")
+    return mp3_io.getvalue()
 
 def concatenate_audios(audios: List[np.ndarray], sample_rate: int, silence_duration: float = 0.2) -> np.ndarray:
     """
@@ -131,6 +193,7 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
     # long_text mode is always enabled
     long_text: bool = True
     enhance_audio: bool = params.get("enhance_audio", False)
+    output_format: str = params.get("output_format", "wav").lower()
 
     audio_segments: List[np.ndarray] = []
     sample_rate: int = None
@@ -170,10 +233,18 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
         audio_tensor = torch.from_numpy(final_audio).float()
         # Default parameters: nfe=64, solver="midpoint", lambd=1.0, tau=0.5
         audio_tensor, sample_rate = AUDIO_ENHANCER(audio_tensor, sample_rate=sample_rate)
-        final_audio = audio_tensor.detach().cpu().numpy()
+        audio_tensor= (audio_tensor * 32768.0).clamp(-32768.0, 32767.0)
+        final_audio = audio_tensor.detach().cpu().numpy().astype(np.int16)
 
-    # Upload or encode the resulting audio
-    audio_return: str = upload_audio(final_audio, sample_rate, f"{job['id']}.wav")
+    key = f"{job['id']}"
+    if output_format == "mp3":
+        bytes_array = wav_to_mp3_bytes(final_audio, sample_rate)
+        key += ".mp3"
+    else:
+        bytes_array = wav_to_bytes(final_audio, sample_rate)
+        key += ".wav"
+    audio_return: str = upload_bytes(bytes_array, key)
+
     job_output: Dict[str, Any] = {"audio": audio_return}
 
     # Clean up temporary files if necessary
