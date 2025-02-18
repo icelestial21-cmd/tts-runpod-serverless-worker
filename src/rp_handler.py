@@ -166,6 +166,7 @@ def run(job: Dict[str, Any]) -> Dict[str, Any]:
 
     # Optionally, apply audio enhancement using AudioEnhancer with default parameters.
     if enhance_audio:
+        final_audio = final_audio.astype(np.float32) / 32768.0
         audio_tensor = torch.from_numpy(final_audio).float()
         # Default parameters: nfe=64, solver="midpoint", lambd=1.0, tau=0.5
         audio_tensor, sample_rate = AUDIO_ENHANCER(audio_tensor, sample_rate=sample_rate)
