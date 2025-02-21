@@ -25,5 +25,15 @@ class Tokenizer:
                 phonemes.extend(convert(word).split())
         phonemes.append("$")
 
-        sequence = [self.symbol_to_id[symbol] for symbol in phonemes]
+        sequence = [
+            self.symbol_to_id.get(symbol, self.symbol_to_id["_"])
+            for symbol in phonemes
+        ]
+        # sequence = [self.symbol_to_id[symbol] for symbol in phonemes]
+        # sequence = []
+        # for symbol in phonemes:
+        #     if symbol in self.symbol_to_id:
+        #         sequence.append(self.symbol_to_id[symbol])
+        #     else:
+        #         sequence.append(self.symbol_to_id["_"])
         return sequence
