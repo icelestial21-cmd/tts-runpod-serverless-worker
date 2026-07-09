@@ -45,14 +45,7 @@ COPY builder/requirements_audio_enhancer.txt ${WORKER_DIR}/requirements_audio_en
 RUN pip install --no-cache-dir -r ${WORKER_DIR}/requirements_audio_enhancer.txt && \
     rm ${WORKER_DIR}/requirements_audio_enhancer.txt
 
-# Fetch the model
-RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
-RUN sudo apt-get install git-lfs
-RUN git lfs install
-
-# Fetch XTTSv2 model
-RUN git clone https://huggingface.co/coqui/XTTS-v2 ${WORKER_MODEL_DIR}/xttsv2
-RUN git clone https://huggingface.co/ResembleAI/resemble-enhance ${WORKER_MODEL_DIR}/audio_enhancer
+# Models will be dynamically downloaded at runtime in predict.py
 
 # Add src files (Worker Template)
 ADD src ${WORKER_DIR}

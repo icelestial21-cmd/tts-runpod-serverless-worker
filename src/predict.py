@@ -13,6 +13,16 @@ class Predictor:
         self.model_dir = model_dir
 
     def setup(self):
+        # Dynamically download models if they aren't baked into the image
+        from huggingface_hub import snapshot_download
+        if not os.path.exists(os.path.join(self.model_dir, "xttsv2", "config.json")):
+            print("Downloading XTTSv2 model weights...", flush=True)
+            snapshot_download(repo_id="coqui/XTTS-v2", local_dir=os.path.join(self.model_dir, "xttsv2"))
+            
+        if not os.path.exists(os.path.join(self.model_dir, "audio_enhancer", "enhancer_stage2")):
+            print("Downloading Resemble-Enhance model weights...", flush=True)
+            snapshot_download(repo_id="ResembleAI/resemble-enhance", local_dir=os.path.join(self.model_dir, "audio_enhancer"))
+
         # Load XTTSv2 model
         self.config = XttsConfig()
         self.config.load_json(
