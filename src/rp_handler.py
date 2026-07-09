@@ -1,6 +1,7 @@
 import io
 import os
 import argparse
+import base64
 # runpod utils
 import runpod
 from runpod.serverless.utils.rp_validator import validate
@@ -35,7 +36,7 @@ def upload_audio(wav, sample_rate, key):
             }
         )
     # Base64 encode
-    return wav_io.decode('UTF-8')
+    return base64.b64encode(wav_io.getvalue()).decode('utf-8')
 
 
 def run(job):
