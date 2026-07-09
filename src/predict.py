@@ -1,4 +1,5 @@
 import os
+import numpy as np
 # torch
 import torch
 # xtts
@@ -11,10 +12,23 @@ use_cuda = os.environ.get('WORKER_USE_CUDA', 'True').lower() == 'true'
 class Predictor:
     def __init__(self, model_dir: str):
         self.model_dir = model_dir
+        self.is_setup = False
+        self.config = None
+        self.model = None
+        self.audio_enhancer = None
 
     def setup(self):
-        # Dynamically download models if they aren't baked into the image
+        # We now lazy-load the models inside predict() so the container boots instantly
+        # and RunPod's health checker doesn't kill us for taking too long to start.
+        pass
+
+    def _lazy_load_models(self):
+        if self.is_setup:
+            return
+
         from huggingface_hub import snapshot_download
+        
+        # Download models
         if not os.path.exists(os.path.join(self.model_dir, "xttsv2", "config.json")):
             print("Downloading XTTSv2 model weights...", flush=True)
             snapshot_download(repo_id="coqui/XTTS-v2", local_dir=os.path.join(self.model_dir, "xttsv2"))
@@ -23,11 +37,9 @@ class Predictor:
             print("Downloading Resemble-Enhance model weights...", flush=True)
             snapshot_download(repo_id="ResembleAI/resemble-enhance", local_dir=os.path.join(self.model_dir, "audio_enhancer"))
 
-        # Load XTTSv2 model
+        print("Loading XTTSv2 into VRAM...", flush=True)
         self.config = XttsConfig()
-        self.config.load_json(
-            os.path.join(self.model_dir, "xttsv2", "config.json")
-        )
+        self.config.load_json(os.path.join(self.model_dir, "xttsv2", "config.json"))
         self.model = Xtts.init_from_config(self.config)
         self.model.load_checkpoint(
             self.config,
@@ -37,11 +49,15 @@ class Predictor:
         )
         if use_cuda:
             self.model.cuda()
-        # Load Audio Enhancer model
+            
+        print("Loading Audio Enhancer into VRAM...", flush=True)
         self.audio_enhancer = AudioEnhancer.from_pretrained(
             os.path.join(self.model_dir, "audio_enhancer", "enhancer_stage2"),
             "cuda" if use_cuda else "cpu"
         )
+        
+        self.is_setup = True
+        print("Models successfully loaded!", flush=True)
 
     @torch.inference_mode()
     def predict(
@@ -54,7 +70,8 @@ class Predictor:
             speed: float,
             enhance_audio: bool
     ):
-        silence = np.zeros(int(0.10 * SAMPLE_RATE))
+        self._lazy_load_models()
+        silence = np.zeros(int(0.10 * 24000))
         wave, sr = None, None
         for line in text:
             voice = speaker_wav[line[0]]
