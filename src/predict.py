@@ -42,6 +42,9 @@ class Predictor:
         self.config.load_json(os.path.join(self.model_dir, "xttsv2", "config.json"))
         self.model = Xtts.init_from_config(self.config)
         
+        if use_cuda:
+            self.model.cuda()
+            
         # PyTorch 2.6+ defaults to weights_only=True, which breaks Coqui-TTS unpickling.
         # We monkeypatch torch.load to bypass this breaking change safely.
         original_load = torch.load
@@ -60,9 +63,6 @@ class Predictor:
         finally:
             torch.load = original_load
 
-        if use_cuda:
-            self.model.cuda()
-            
         print("Loading Audio Enhancer into VRAM...", flush=True)
         self.audio_enhancer = AudioEnhancer.from_pretrained(
             os.path.join(self.model_dir, "audio_enhancer", "enhancer_stage2"),
