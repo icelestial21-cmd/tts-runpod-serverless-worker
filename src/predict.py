@@ -41,12 +41,25 @@ class Predictor:
         self.config = XttsConfig()
         self.config.load_json(os.path.join(self.model_dir, "xttsv2", "config.json"))
         self.model = Xtts.init_from_config(self.config)
-        self.model.load_checkpoint(
-            self.config,
-            checkpoint_dir=os.path.join(self.model_dir, "xttsv2"),
-            use_deepspeed=True,
-            eval=True
-        )
+        
+        # PyTorch 2.6+ defaults to weights_only=True, which breaks Coqui-TTS unpickling.
+        # We monkeypatch torch.load to bypass this breaking change safely.
+        original_load = torch.load
+        def _patched_load(*args, **kwargs):
+            kwargs['weights_only'] = False
+            return original_load(*args, **kwargs)
+        
+        torch.load = _patched_load
+        try:
+            self.model.load_checkpoint(
+                self.config,
+                checkpoint_dir=os.path.join(self.model_dir, "xttsv2"),
+                use_deepspeed=True,
+                eval=True
+            )
+        finally:
+            torch.load = original_load
+
         if use_cuda:
             self.model.cuda()
             
