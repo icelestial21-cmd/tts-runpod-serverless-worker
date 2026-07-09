@@ -10,4 +10,4 @@ transformers==4.38.2
 huggingface-hub<1.0
 TTS==0.22.0
 scipy==1.11.4
-deepspeed>=0.14.4
+deepspeed==0.14.4
