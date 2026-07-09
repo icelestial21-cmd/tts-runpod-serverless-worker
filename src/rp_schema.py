@@ -27,5 +27,9 @@ INPUT_SCHEMA = {
     "enhance_audio": {
         "type": bool,
         "required": True
+    },
+    "stream": {
+        "type": bool,
+        "required": False
     }
 }

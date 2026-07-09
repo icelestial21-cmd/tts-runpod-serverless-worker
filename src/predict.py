@@ -75,7 +75,7 @@ class Predictor:
     @torch.inference_mode()
     def predict(
             self,
-            text: str,
+            text: list,
             speaker_wav: dict,
             gpt_cond_len: int,
             max_ref_len: int,
@@ -111,4 +111,33 @@ class Predictor:
             )
             wave = wave.detach().cpu().numpy()
         return wave, sr
-        # return outputs['wav']
+
+    @torch.inference_mode()
+    def predict_stream(
+            self,
+            text: list,
+            speaker_wav: dict,
+            gpt_cond_len: int,
+            max_ref_len: int,
+            language: str,
+            speed: float
+    ):
+        self._lazy_load_models()
+        
+        for line in text:
+            voice = speaker_wav[line[0]]
+            raw_text = line[1]
+            
+            chunks = self.model.inference_stream(
+                raw_text,
+                language=language,
+                speaker_wav=voice,
+                gpt_cond_len=gpt_cond_len,
+                max_ref_len=max_ref_len,
+                speed=speed,
+                enable_text_splitting=True
+            )
+            
+            for chunk in chunks:
+                wave = chunk.detach().cpu().numpy()
+                yield wave, 24000

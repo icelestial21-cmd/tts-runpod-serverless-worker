@@ -39,6 +39,8 @@ def upload_audio(wav, sample_rate, key):
     return base64.b64encode(wav_io.getvalue()).decode('utf-8')
 
 
+import numpy as np
+
 def run(job):
     job_input = job['input']
 
@@ -46,7 +48,9 @@ def run(job):
     validated_input = validate(job_input, INPUT_SCHEMA)
 
     if 'errors' in validated_input:
-        return {"error": validated_input['errors']}
+        yield {"error": validated_input['errors']}
+        return
+    
     validated_input = validated_input['validated_input']
 
     # Download input objects
@@ -56,27 +60,53 @@ def run(job):
             [v]
         )
 
-    # Inference text-to-audio
-    wave, sr = MODEL.predict(
-        language=validated_input["language"],
-        speaker_wav=validated_input["voice"],
-        text=validated_input["text"],
-        gpt_cond_len=validated_input.get("gpt_cond_len", 7),
-        max_ref_len=validated_input.get("max_ref_len", 10),
-        speed=validated_input.get("speed", 1.0),
-        enhance_audio=validated_input.get("enhance_audio", True)
-    )
+    is_stream = validated_input.get("stream", False)
 
-    # Upload output object
-    audio_return = upload_audio(wave, sr, f"{job['id']}.wav")
-    job_output = {
-        "audio": audio_return
-    }
+    if is_stream:
+        # Streaming Inference text-to-audio
+        chunks = MODEL.predict_stream(
+            language=validated_input["language"],
+            speaker_wav=validated_input["voice"],
+            text=validated_input["text"],
+            gpt_cond_len=validated_input.get("gpt_cond_len", 7),
+            max_ref_len=validated_input.get("max_ref_len", 10),
+            speed=validated_input.get("speed", 1.0)
+        )
+        
+        for wave_chunk, sr in chunks:
+            # Convert float32 wave chunk to PCM 16-bit
+            pcm16_chunk = (wave_chunk * 32767).astype(np.int16).tobytes()
+            chunk_b64 = base64.b64encode(pcm16_chunk).decode('utf-8')
+            yield {
+                "audio_chunk": chunk_b64,
+                "sample_rate": sr,
+                "is_final": False
+            }
+            
+        yield {"is_final": True}
+        
+    else:
+        # Blocking Inference text-to-audio
+        wave, sr = MODEL.predict(
+            language=validated_input["language"],
+            speaker_wav=validated_input["voice"],
+            text=validated_input["text"],
+            gpt_cond_len=validated_input.get("gpt_cond_len", 7),
+            max_ref_len=validated_input.get("max_ref_len", 10),
+            speed=validated_input.get("speed", 1.0),
+            enhance_audio=validated_input.get("enhance_audio", True)
+        )
+
+        # Upload output object
+        audio_return = upload_audio(wave, sr, f"{job['id']}.wav")
+        job_output = {
+            "audio": audio_return
+        }
+        
+        yield job_output
 
     # Remove downloaded input objects
     rp_cleanup.clean(['input_objects'])
-
-    return job_output
 
 
 if __name__ == "__main__":
