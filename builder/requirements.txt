@@ -1,13 +1,7 @@
-# Required Python packages get listed here, one per line.
-# Reccomended to lock the version number to avoid unexpected changes.
-
-torchvision==0.16.0
-torchaudio==2.1.0
-
 runpod==1.4.2
 numpy<2.0.0
 transformers==4.38.2
 huggingface-hub<1.0
 TTS==0.22.0
 scipy==1.11.4
-deepspeed==0.14.4
+deepspeed>=0.14.4
