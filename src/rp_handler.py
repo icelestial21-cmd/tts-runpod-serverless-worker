@@ -73,15 +73,21 @@ def run(job):
             speed=validated_input.get("speed", 1.0)
         )
         
-        for wave_chunk, sr in chunks:
-            # Convert float32 wave chunk to PCM 16-bit
-            pcm16_chunk = (wave_chunk * 32767).astype(np.int16).tobytes()
-            chunk_b64 = base64.b64encode(pcm16_chunk).decode('utf-8')
-            yield {
-                "audio_chunk": chunk_b64,
-                "sample_rate": sr,
-                "is_final": False
-            }
+        for item in chunks:
+            if isinstance(item, dict):
+                yield item
+                if "error" in item:
+                    return
+            else:
+                wave_chunk, sr = item
+                # Convert float32 wave chunk to PCM 16-bit
+                pcm16_chunk = (wave_chunk * 32767).astype(np.int16).tobytes()
+                chunk_b64 = base64.b64encode(pcm16_chunk).decode('utf-8')
+                yield {
+                    "audio_chunk": chunk_b64,
+                    "sample_rate": sr,
+                    "is_final": False
+                }
             
         yield {"is_final": True}
         

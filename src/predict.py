@@ -122,27 +122,48 @@ class Predictor:
             language: str,
             speed: float
     ):
-        self._lazy_load_models()
+        yield {"status": "Starting lazy load of models..."}
+        
+        try:
+            self._lazy_load_models()
+        except Exception as e:
+            import traceback
+            yield {"error": f"Failed to load models: {traceback.format_exc()}"}
+            return
+            
+        yield {"status": "Models loaded. Processing text..."}
         
         for line in text:
             voice = speaker_wav[line[0]]
             raw_text = line[1]
             
-            gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(
-                audio_path=voice,
-                max_ref_length=max_ref_len,
-                gpt_cond_len=gpt_cond_len
-            )
+            yield {"status": f"Computing conditioning latents for voice: {voice}..."}
+            try:
+                gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(
+                    audio_path=voice,
+                    max_ref_length=max_ref_len,
+                    gpt_cond_len=gpt_cond_len
+                )
+            except Exception as e:
+                import traceback
+                yield {"error": f"Failed to compute latents: {traceback.format_exc()}"}
+                return
             
-            chunks = self.model.inference_stream(
-                raw_text,
-                language=language,
-                gpt_cond_latent=gpt_cond_latent,
-                speaker_embedding=speaker_embedding,
-                enable_text_splitting=True,
-                speed=speed
-            )
-            
-            for chunk in chunks:
-                wave = chunk.detach().cpu().numpy()
-                yield wave, 24000
+            yield {"status": f"Starting streaming inference for text: {raw_text[:20]}..."}
+            try:
+                chunks = self.model.inference_stream(
+                    raw_text,
+                    language=language,
+                    gpt_cond_latent=gpt_cond_latent,
+                    speaker_embedding=speaker_embedding,
+                    enable_text_splitting=True,
+                    speed=speed
+                )
+                
+                for chunk in chunks:
+                    wave = chunk.detach().cpu().numpy()
+                    yield wave, 24000
+            except Exception as e:
+                import traceback
+                yield {"error": f"Inference stream crashed: {traceback.format_exc()}"}
+                return
