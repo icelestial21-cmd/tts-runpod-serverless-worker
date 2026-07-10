@@ -128,14 +128,19 @@ class Predictor:
             voice = speaker_wav[line[0]]
             raw_text = line[1]
             
+            gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(
+                audio_path=voice,
+                max_ref_length=max_ref_len,
+                gpt_cond_len=gpt_cond_len
+            )
+            
             chunks = self.model.inference_stream(
                 raw_text,
                 language=language,
-                speaker_wav=voice,
-                gpt_cond_len=gpt_cond_len,
-                max_ref_len=max_ref_len,
-                speed=speed,
-                enable_text_splitting=True
+                gpt_cond_latent=gpt_cond_latent,
+                speaker_embedding=speaker_embedding,
+                enable_text_splitting=True,
+                speed=speed
             )
             
             for chunk in chunks:
