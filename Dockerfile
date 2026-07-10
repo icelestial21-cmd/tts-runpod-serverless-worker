@@ -45,7 +45,10 @@ COPY builder/requirements_audio_enhancer.txt ${WORKER_DIR}/requirements_audio_en
 RUN pip install --no-cache-dir -r ${WORKER_DIR}/requirements_audio_enhancer.txt && \
     rm ${WORKER_DIR}/requirements_audio_enhancer.txt
 
-# Models will be dynamically downloaded at runtime in predict.py
+# Download models at build-time to avoid cold-start timeouts
+RUN pip install huggingface-hub
+RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='coqui/XTTS-v2', local_dir='${WORKER_MODEL_DIR}/xtts')"
+RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='upb-lea/resemble-enhance', local_dir='${WORKER_MODEL_DIR}/audio_enhancer')"
 
 # Add src files (Worker Template)
 ADD src ${WORKER_DIR}
