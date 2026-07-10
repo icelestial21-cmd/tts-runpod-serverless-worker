@@ -119,4 +119,7 @@ if __name__ == "__main__":
     MODEL = predict.Predictor(model_dir=model_dir)
     MODEL.setup()
 
-    runpod.serverless.start({"handler": run})
+    runpod.serverless.start({
+        "handler": run,
+        "return_aggregate_stream": True
+    })
