@@ -47,7 +47,7 @@ RUN pip install --no-cache-dir -r ${WORKER_DIR}/requirements_audio_enhancer.txt 
 
 # Download models at build-time to avoid cold-start timeouts
 RUN pip install huggingface-hub
-RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='coqui/XTTS-v2', local_dir='${WORKER_MODEL_DIR}/xtts')"
+RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='coqui/XTTS-v2', local_dir='${WORKER_MODEL_DIR}/xttsv2')"
 RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ResembleAI/resemble-enhance', local_dir='${WORKER_MODEL_DIR}/audio_enhancer')"
 
 # Add src files (Worker Template)
